@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import os
 import sys
 import torchvision
-import tarfile
+import argparse
 import numpy as np
 from torchvision.datasets.utils import download_url
 from torchvision.datasets import ImageFolder
@@ -231,8 +231,8 @@ class food_classifier(pl.LightningModule):
         if self.track_wandb:
             wandb.log({"training_loss":self.last_train_loss,
                         "training_acc":self.last_train_acc,
-                        "validation_loss":avg_loss,
-                        "validation_acc":avg_acc})
+                        "val_loss":avg_loss,
+                        "val_acc":avg_acc})
 
         # clear memory
         self.validation_step_losses.clear()
@@ -244,10 +244,80 @@ epochs = 5
 train_loader, valid_loader = dataloader.get_data()
 
 if __name__ == "__main__":
-    model = food_classifier(lr=0.001, dropout=0.2, num_classes=2, track_wandb=False)
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        '-e', '--epochs', default=10,
+        type = int,
+        required=False,
+        help='set the number of epochs'
+    )
+    parser.add_argument(
+        '-w', '--wandb', default=False,
+        type = bool,
+        required=False,
+        help='set if progress is tracked with WandB'
+    )
+    parser.add_argument(
+        '-b', '--batch_size', default=32,
+        type = int,
+        required=False,
+        help='set the batch size'
+    )
+    parser.add_argument(
+        '-s', '--start_filters', default=512,
+        type = int,
+        required=False,
+        help='set the starting number of filters'
+    )
+    parser.add_argument(
+        '-l', '--num_linear_layers', default=4,
+        type = int,
+        required=False,
+        help='set the number of linear layers'
+    )
+    parser.add_argument(
+        '-c', '--num_conv_layers', default=4,
+        type = int,
+        required=False,
+        help='set the number of convolutional layers'
+    )
+    args = parser.parse_args()
+    print(f"[INFO] epochs: {args.epochs}")
+    print(f"[INFO] wandb: {args.wandb}")
+    print(f"[INFO] batch_size: {args.batch_size}")
+    print(f"[INFO] start_filters: {args.start_filters}")
+    print(f"[INFO] num_linear_layers: {args.num_linear_layers}")
+    print(f"[INFO] num_conv_layers: {args.num_conv_layers}")
+    args_epochs = args.epochs
+    args_wandb = args.wandb
+    args_batch_size = args.batch_size
+    args_start_filters = args.start_filters
+    args_num_linear_layers = args.num_linear_layers
+    args_num_conv_layers = args.num_conv_layers
+
+    config = {
+        "architecture":"food_classification",
+        "epochs":epochs,
+        "batch_size":args_batch_size,
+        "start_filters":args_start_filters,
+        "num_linear_layers":args_num_linear_layers,
+        "num_conv_layers":args_num_conv_layers
+    }
+
+    if args_wandb:
+        wandb.login()
+        wandb.init(
+            project="monet",
+            config=config
+        )
+
+    model = food_classifier(lr=0.001, dropout=0.2, num_classes=2, track_wandb=args_wandb, num_starting_filters=args_start_filters, num_linear_layers=args_num_linear_layers, num_conv_layers=args_num_conv_layers)
 
     trainer = Trainer(max_epochs = epochs, fast_dev_run=False)
     trainer.fit(model, train_loader, valid_loader)
+
+    if args_wandb:
+        wandb.finish()
 
 # # Create a sample input tensor (batch_size, channels, height, width)
 # input_data = torch.randn(1, 3, 32, 32)  # Example input with 3 channels

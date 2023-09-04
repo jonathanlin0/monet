@@ -46,9 +46,6 @@ def prep_cifar100():
 # PREPARATION FUNCTIONS
 prep_cifar100()
 
-train = train[:max(len(train), 1000)]
-val = val[:max(len(val), 1000)]
-
 # DATASET AND DATALOADER -----------------------------------------
 class food_classification_dataset(Dataset):
     """dataset for Animal Kingdom"""

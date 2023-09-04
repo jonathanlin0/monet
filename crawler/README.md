@@ -1,0 +1,1 @@
+python3 model/food_classification/main.py -w True --num_linear_layers 4 --num_conv_layers 4
