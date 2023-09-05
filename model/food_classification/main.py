@@ -5,6 +5,7 @@ import os
 import sys
 import torchvision
 import argparse
+import random
 import numpy as np
 from torchvision.datasets.utils import download_url
 from torchvision.datasets import ImageFolder
@@ -49,8 +50,8 @@ class food_classifier(pl.LightningModule):
         track_wandb:bool,
         img_channels=3,
         num_starting_filters=512,
-        num_linear_layers=4,
-        num_conv_layers=4):
+        num_linear_layers=3,
+        num_conv_layers=8):
         super().__init__()
 
         self.prep = nn.Conv2d(
@@ -66,7 +67,7 @@ class food_classifier(pl.LightningModule):
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
 
         layers = []
-        for i in range(1, num_conv_layers + 1):
+        for i in range(0, num_conv_layers):
             layers.append(nn.Conv2d(in_channels=num_starting_filters, out_channels=num_starting_filters, kernel_size=3, stride=1, padding=1))
         self.conv_layers = nn.Sequential(*layers)
 
@@ -88,8 +89,6 @@ class food_classifier(pl.LightningModule):
         self.avgpool = nn.AdaptiveMaxPool2d((1, 1))
         self.fc = nn.Linear(num_starting_filters // (2 ** (num_linear_layers)), num_classes)
 
-        self.temp = nn.Linear(5, 2)
-
         self.lr = lr
         self.track_wandb = track_wandb
         self.train_step_losses = []
@@ -100,16 +99,17 @@ class food_classifier(pl.LightningModule):
         self.last_train_loss = 0
     
     def forward(self, x):
-        bob = self.prep(x)
-        bob = self.norm_1(bob)
-        bob = self.conv_layers(bob)
-        
+        x = self.prep(x)
+        x = self.norm_1(x)
+
+        x = self.conv_layers(x)
+
         # Initialize a list to store the pooled outputs for each filter
         pooled_outputs = []
 
         # Apply global max pooling for each filter
-        for i in range(bob.shape[1]):  # Iterate over the channels (filters)
-            single_channel_feature_map = bob[:, i, :, :]  # Get a single channel (filter)
+        for i in range(x.shape[1]):  # Iterate over the channels (filters)
+            single_channel_feature_map = x[:, i, :, :]  # Get a single channel (filter)
             pooled_output = F.adaptive_max_pool2d(single_channel_feature_map, (1, 1))
             pooled_outputs.append(pooled_output)
 
@@ -120,34 +120,9 @@ class food_classifier(pl.LightningModule):
         pooled_output = pooled_outputs.squeeze(2).to("mps")
 
 
-        bob = self.linear_layers(pooled_output)
-        x = self.fc(bob)
+        x = self.linear_layers(pooled_output)
+        x = self.fc(x)
 
-        # # Create a sample input tensor (batch_size, channels, height, width)
-        # input_data = torch.randn(1, 3, 32, 32)  # Example input with 3 channels
-
-        # # Create a Conv2d layer with multiple filters (e.g., 5 filters)
-        # conv_layer = nn.Conv2d(in_channels=3, out_channels=5, kernel_size=3, stride=1, padding=1).to("mps")
-
-        # # Apply the Conv2d layer to the input data
-        # feature_maps = conv_layer(x)
-
-        # # Initialize a list to store the pooled outputs for each filter
-        # pooled_outputs = []
-
-        # # Apply global max pooling for each filter
-        # for i in range(feature_maps.shape[1]):  # Iterate over the channels (filters)
-        #     single_channel_feature_map = feature_maps[:, i, :, :]  # Get a single channel (filter)
-        #     pooled_output = F.adaptive_max_pool2d(single_channel_feature_map, (1, 1))
-        #     pooled_outputs.append(pooled_output)
-
-        # # Concatenate the pooled outputs along the channel dimension to get the final output
-        # pooled_outputs = torch.cat(pooled_outputs, dim=1)
-
-        # # The pooled_outputs tensor now contains the global max-pooled output for each filter
-        # pooled_output = pooled_outputs.squeeze(2).to("mps")
-
-        # x = self.temp(pooled_output)
         return x
     
     def training_step(self, batch, batch_idx):
@@ -240,8 +215,6 @@ class food_classifier(pl.LightningModule):
 
         return {'val_loss':avg_loss}
 
-epochs = 5
-train_loader, valid_loader = dataloader.get_data()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -264,7 +237,7 @@ if __name__ == "__main__":
         help='set the batch size'
     )
     parser.add_argument(
-        '-s', '--start_filters', default=512,
+        '-f', '--start_filters', default=512,
         type = int,
         required=False,
         help='set the starting number of filters'
@@ -281,6 +254,18 @@ if __name__ == "__main__":
         required=False,
         help='set the number of convolutional layers'
     )
+    parser.add_argument(
+        '-s', '--save_checkpoint', default=False,
+        type = bool,
+        required=False,
+        help='set if the checkpoint should be saved'
+    )
+    parser.add_argument(
+        "-d", "--debug", default=False,
+        type = bool,
+        required=False,
+        help='set if the debug mode should be on'
+    )
     args = parser.parse_args()
     print(f"[INFO] epochs: {args.epochs}")
     print(f"[INFO] wandb: {args.wandb}")
@@ -288,16 +273,22 @@ if __name__ == "__main__":
     print(f"[INFO] start_filters: {args.start_filters}")
     print(f"[INFO] num_linear_layers: {args.num_linear_layers}")
     print(f"[INFO] num_conv_layers: {args.num_conv_layers}")
+    print(f"[INFO] save_checkpoint: {args.save_checkpoint}")
+    print(f"[INFO] debug: {args.debug}")
     args_epochs = args.epochs
     args_wandb = args.wandb
     args_batch_size = args.batch_size
     args_start_filters = args.start_filters
     args_num_linear_layers = args.num_linear_layers
     args_num_conv_layers = args.num_conv_layers
+    args_save_checkpoint = args.save_checkpoint
+    args_debug = args.debug
+
+    train_loader, valid_loader = dataloader.get_data()
 
     config = {
         "architecture":"food_classification",
-        "epochs":epochs,
+        "epochs":args_epochs,
         "batch_size":args_batch_size,
         "start_filters":args_start_filters,
         "num_linear_layers":args_num_linear_layers,
@@ -311,10 +302,18 @@ if __name__ == "__main__":
             config=config
         )
 
-    model = food_classifier(lr=0.001, dropout=0.2, num_classes=2, track_wandb=args_wandb, num_starting_filters=args_start_filters, num_linear_layers=args_num_linear_layers, num_conv_layers=args_num_conv_layers)
+    model = food_classifier(lr=0.001, dropout=0.5, num_classes=2, track_wandb=args_wandb, num_starting_filters=args_start_filters, num_linear_layers=args_num_linear_layers, num_conv_layers=args_num_conv_layers)
 
-    trainer = Trainer(max_epochs = epochs, fast_dev_run=False)
+    trainer = Trainer(max_epochs = args_epochs, fast_dev_run=args_debug)
     trainer.fit(model, train_loader, valid_loader)
+
+    if args_save_checkpoint:
+        file_name = os.path.abspath(__file__)
+        file_name = file_name[file_name.rfind("/") + 1:file_name.rfind(".")]
+        trainer.save_checkpoint(f"model/saved_model_weights/{file_name}.ckpt")
+
+        # link for how to load in the weights:
+        # https://pytorch-lightning.readthedocs.io/en/0.8.5/weights_loading.html
 
     if args_wandb:
         wandb.finish()
