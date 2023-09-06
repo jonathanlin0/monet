@@ -2,3 +2,4 @@ lightning_logs/*
 wandb/*
 model/datasets/food11/*
 model/datasets/food101/*
+model/cache_photos/*

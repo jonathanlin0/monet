@@ -33,6 +33,8 @@ from torchmetrics import Accuracy
 import torch.utils.data as data
 from torchvision.datasets import MNIST
 from torch.nn import functional as F
+import torchvision.models as models
+
 
 parent_dir = os.path.abspath(__file__)[:os.path.abspath(__file__).rfind("/")]
 parent_dir = parent_dir[:parent_dir.rfind("/")]
@@ -48,46 +50,65 @@ class food_classifier(pl.LightningModule):
         dropout: float,
         num_classes: int,
         track_wandb:bool,
-        img_channels=3,
-        num_starting_filters=512,
         num_linear_layers=3,
-        num_conv_layers=8):
+        num_conv_layers=8,
+        img_channels=3,
+        num_starting_filters=512):
         super().__init__()
 
-        self.prep = nn.Conv2d(
-                in_channels = img_channels,
-                out_channels = num_starting_filters,
-                kernel_size = 7,
-                stride = 2,
-                padding = 3,
-                bias = False
-        )
-        self.norm_1 = nn.BatchNorm2d(num_starting_filters)
-        self.activation = nn.LeakyReLU(inplace=True)
-        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+        # self.prep = nn.Conv2d(
+        #         in_channels = img_channels,
+        #         out_channels = num_starting_filters,
+        #         kernel_size = 7,
+        #         stride = 2,
+        #         padding = 3,
+        #         bias = False
+        # )
+        # self.norm_1 = nn.BatchNorm2d(num_starting_filters)
+        # self.activation = nn.LeakyReLU(inplace=True)
+        # self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+
+        # layers = []
+        # for i in range(0, num_conv_layers):
+        #     layers.append(nn.Conv2d(in_channels=num_starting_filters, out_channels=num_starting_filters, kernel_size=3, stride=1, padding=1))
+        # self.conv_layers = nn.Sequential(*layers)
+
+        # layers = []
+        # # create number of blocks according to the num_blocks input
+        # for i in range(num_linear_layers):
+        #     curr_in_channels = num_starting_filters // (2 ** i)
+        #     curr_out_channels = num_starting_filters // (2 ** (i + 1))
+        #     layers.append(nn.Linear(curr_in_channels, curr_out_channels))
+
+        #     # every other layer is a batch norm layer
+        #     if i % 2 == 0:
+        #         layers.append(nn.BatchNorm1d(curr_out_channels))
+        #         layers.append(nn.LeakyReLU(inplace=True))
+        #         layers.append(nn.Dropout(p=dropout))
+        
+        # self.linear_layers = nn.Sequential(*layers)
+
+        # self.avgpool = nn.AdaptiveMaxPool2d((1, 1))
+        # self.fc = nn.Linear(num_starting_filters // (2 ** (num_linear_layers)), num_classes)
+
+        # init a pretrained resnet
+        backbone = models.resnet50(weights="DEFAULT")
+        num_filters = backbone.fc.in_features
+        layers = list(backbone.children())[:-1]
+        self.feature_extractor = nn.Sequential(*layers)
 
         layers = []
-        for i in range(0, num_conv_layers):
-            layers.append(nn.Conv2d(in_channels=num_starting_filters, out_channels=num_starting_filters, kernel_size=3, stride=1, padding=1))
-        self.conv_layers = nn.Sequential(*layers)
-
-        layers = []
-        # create number of blocks according to the num_blocks input
         for i in range(num_linear_layers):
-            curr_in_channels = num_starting_filters // (2 ** i)
-            curr_out_channels = num_starting_filters // (2 ** (i + 1))
+            curr_in_channels = num_filters // (2 ** i)
+            curr_out_channels = num_filters // (2 ** (i + 1))
             layers.append(nn.Linear(curr_in_channels, curr_out_channels))
-
-            # every other layer is a batch norm layer
             if i % 2 == 0:
-                layers.append(nn.BatchNorm1d(curr_out_channels))
                 layers.append(nn.LeakyReLU(inplace=True))
                 layers.append(nn.Dropout(p=dropout))
-        
         self.linear_layers = nn.Sequential(*layers)
 
-        self.avgpool = nn.AdaptiveMaxPool2d((1, 1))
-        self.fc = nn.Linear(num_starting_filters // (2 ** (num_linear_layers)), num_classes)
+        self.classifier = nn.Linear(num_filters // (2 ** (num_linear_layers)), num_classes)
+        self.dropout = nn.Dropout(dropout)
 
         self.lr = lr
         self.track_wandb = track_wandb
@@ -99,29 +120,26 @@ class food_classifier(pl.LightningModule):
         self.last_train_loss = 0
     
     def forward(self, x):
-        x = self.prep(x)
-        x = self.norm_1(x)
+        # x = self.prep(x)
+        # x = self.norm_1(x)
 
-        x = self.conv_layers(x)
+        # x = self.conv_layers(x)
 
-        # Initialize a list to store the pooled outputs for each filter
-        pooled_outputs = []
+        # x = self.avgpool(x)
+        # x = x.squeeze((2, 3))
 
-        # Apply global max pooling for each filter
-        for i in range(x.shape[1]):  # Iterate over the channels (filters)
-            single_channel_feature_map = x[:, i, :, :]  # Get a single channel (filter)
-            pooled_output = F.adaptive_max_pool2d(single_channel_feature_map, (1, 1))
-            pooled_outputs.append(pooled_output)
+        # x = self.linear_layers(x)
+        # x = self.fc(x)
 
-        # Concatenate the pooled outputs along the channel dimension to get the final output
-        pooled_outputs = torch.cat(pooled_outputs, dim=1)
-
-        # The pooled_outputs tensor now contains the global max-pooled output for each filter
-        pooled_output = pooled_outputs.squeeze(2).to("mps")
-
-
-        x = self.linear_layers(pooled_output)
-        x = self.fc(x)
+        # # Apply softmax to the final output
+        # x = F.softmax(x, dim=1)
+        representations = self.feature_extractor(x).squeeze((2, 3))
+        # print(representations.shape)
+        
+        x = self.dropout(representations)
+        x = self.linear_layers(representations)
+        x = self.dropout(x)
+        x = self.classifier(x)
 
         return x
     
@@ -186,14 +204,7 @@ class food_classifier(pl.LightningModule):
     def val_dataloader(self):
         train_loader, val_loader = dataloader.get_data()
         return val_loader
-    
-    def test_step(self, batch, batch_idx):
-        x, y = batch
-        x = x.view(x.size(0), -1)
-        z = self.l1(x)
-        x_hat = self.l2(z)
-        test_loss = F.mse_loss(x_hat, x)
-        self.log("test_loss", test_loss)
+
     
     def on_validation_epoch_end(self):
         all_preds = self.validation_step_losses
@@ -243,13 +254,13 @@ if __name__ == "__main__":
         help='set the starting number of filters'
     )
     parser.add_argument(
-        '-l', '--num_linear_layers', default=4,
+        '-l', '--num_linear_layers', default=3,
         type = int,
         required=False,
         help='set the number of linear layers'
     )
     parser.add_argument(
-        '-c', '--num_conv_layers', default=4,
+        '-c', '--num_conv_layers', default=6,
         type = int,
         required=False,
         help='set the number of convolutional layers'
@@ -317,27 +328,3 @@ if __name__ == "__main__":
 
     if args_wandb:
         wandb.finish()
-
-# # Create a sample input tensor (batch_size, channels, height, width)
-# input_data = torch.randn(1, 3, 32, 32)  # Example input with 3 channels
-
-# # Create a Conv2d layer with multiple filters (e.g., 5 filters)
-# conv_layer = nn.Conv2d(in_channels=3, out_channels=5, kernel_size=3, stride=1, padding=1)
-
-# # Apply the Conv2d layer to the input data
-# feature_maps = conv_layer(input_data)
-
-# # Initialize a list to store the pooled outputs for each filter
-# pooled_outputs = []
-
-# # Apply global max pooling for each filter
-# for i in range(feature_maps.shape[1]):  # Iterate over the channels (filters)
-#     single_channel_feature_map = feature_maps[:, i, :, :]  # Get a single channel (filter)
-#     pooled_output = F.adaptive_max_pool2d(single_channel_feature_map, (1, 1))
-#     pooled_outputs.append(pooled_output)
-
-# # Concatenate the pooled outputs along the channel dimension to get the final output
-# pooled_outputs = torch.cat(pooled_outputs, dim=1)
-
-# # The pooled_outputs tensor now contains the global max-pooled output for each filter
-# print(pooled_outputs.squeeze(2).shape)  # The shape will be (batch_size, num_filters, 1, 1)
