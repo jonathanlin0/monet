@@ -15,6 +15,7 @@ from math import ceil
 from statistics import median
 import shutil
 from tqdm import tqdm
+import random
 
 
 # create a json file for prep
@@ -72,13 +73,17 @@ def prep_food11():
             
 # entire dataset is food
 def prep_food101():
+    val_split_prob = 0.2
     categories = os.listdir(FOOD_101_DIR)
     for category in categories:
         if "." in category:
             continue
         for file in os.listdir(FOOD_101_DIR + "/" + category):
             file_path = f"{FOOD_101_DIR}/{category}/{file}"
-            train.append([file_path, 1])
+            if random.random() <= val_split_prob:
+                val.append([file_path, 1])
+            else:
+                train.append([file_path, 1])
 
 # PREPARATION FUNCTIONS
 prep_cifar100()
@@ -168,6 +173,7 @@ for dict_ in dicts:
         dict_[i][0] = image_path
 
 # remove all photos that are black and white (only working in RGB)
+print("Removing grayscale photos...")
 dicts = [train, val]
 new_train = []
 new_val = []

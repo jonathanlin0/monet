@@ -295,7 +295,7 @@ if __name__ == "__main__":
     args_save_checkpoint = args.save_checkpoint
     args_debug = args.debug
 
-    train_loader, valid_loader = dataloader.get_data()
+    train_loader, valid_loader = dataloader.get_data(batch_size=args_batch_size)
 
     config = {
         "architecture":"food_classification",
