@@ -102,7 +102,7 @@ class food_classification_dataset(Dataset):
 
         return (image, label)
 
-def get_data(batch_size=8, num_workers=4, height=100, width=100):
+def get_data(batch_size=64, num_workers=4, height=100, width=100):
     # cwd = os.path.dirname(os.path.realpath(__file__))
     # cwd = cwd[0:cwd.rfind("/")]
     # cwd = cwd[0:cwd.rfind("/") + 1]

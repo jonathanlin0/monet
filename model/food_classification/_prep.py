@@ -94,17 +94,25 @@ prep_food101()
 try:
     shutil.rmtree('model/cache_photos')
 except:
-    pass
+    print("cache_photos folder does not exist. Creating new one...")
 os.mkdir("model/cache_photos")
 
 dicts = [train, val]
 
 height = 32
 width = 32
-for dict_ in dicts:
+new_train = []
+new_val = []
+matching_dicts = [new_train, new_val]
+for i, dict_ in enumerate(dicts):
     for i, key in enumerate(tqdm(dict_)):
         image_path = key[0]
         image = PIL.Image.open(image_path, mode="r")
+
+        # remove grayscale images
+        if image.size[0] == 1:
+            continue
+
         # if image is extremely long, cut the image left and right sides
         # if the image is extremely tall, cut the image top and bottom sides
         curr_width = image.size[0]
@@ -169,24 +177,10 @@ for dict_ in dicts:
         image_path = image_path.replace("/", "_")
         image_path = image_path[:image_path.rfind(".")] # get rid of current file extension
         image_path = "model/cache_photos/" + image_path + ".png"
+        
+        matching_dicts[i].append([image_path, key[1]])
         image.save(image_path ,"PNG")
-        dict_[i][0] = image_path
 
-# remove all photos that are black and white (only working in RGB)
-print("Removing grayscale photos...")
-dicts = [train, val]
-new_train = []
-new_val = []
-matching_dicts = [new_train, new_val]
-for i, dict_ in enumerate(dicts):
-    for key in tqdm(dict_):
-        img_path = key[0]
-        image = PIL.Image.open(img_path, mode="r")
-        image = torchvision.transforms.ToTensor()(image)
-        image = image.to(torch.float32)
-        if image.shape[0] == 1:
-            continue
-        matching_dicts[i].append(key)
 train = new_train
 val = new_val
 
